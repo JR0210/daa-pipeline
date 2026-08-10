@@ -17,12 +17,12 @@ cp .env.example .env   # then edit DATA_ROOT, RSCRIPT_PATH, LANDMARKS_CSV, etc.
 If PowerShell blocks `Activate.ps1` with an execution-policy error, run
 `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` first and try
 again. Activation is a convenience, not a requirement — every script and
-`run_pipeline.py` work fine invoked directly via
-`.venv\Scripts\python.exe script.py` (Windows) / `.venv/bin/python
-script.py` (macOS/Linux) without activating at all. `run_pipeline.py` in
-particular always uses the interpreter that launched it for every Python
-stage, so an unactivated venv is never silently shadowed by a different
-`python` on `PATH`.
+`run_pipeline.py` work fine invoked directly via the venv's own
+interpreter without activating at all: `.venv\Scripts\python.exe script.py`
+on Windows, `.venv/bin/python script.py` on macOS/Linux. `run_pipeline.py`
+in particular always uses the interpreter that launched it for every
+Python stage, so an unactivated venv is never silently shadowed by a
+different `python` on `PATH`.
 
 `.venv` is already gitignored.
 

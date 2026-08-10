@@ -161,6 +161,17 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_ERROR
 
     if missing_dirs:
+        if args.stage == "decimated":
+            # A silent partial skip here would let the watertightness gate
+            # "pass" having only checked some of the parts it was asked to
+            # -- fail loudly instead of quietly validating less than requested.
+            logger.error(
+                "Expected decimated output missing for: %s\n"
+                "  Run decimate.py for the missing part(s), or pass --part to "
+                "only check the part(s) you actually have.",
+                ", ".join(str(d) for d in missing_dirs),
+            )
+            return EXIT_ERROR
         for d in missing_dirs:
             logger.warning("Mesh folder does not exist, skipping: %s", d)
 

@@ -90,3 +90,45 @@ def test_decimated_stage_with_no_decimated_output_gives_actionable_error(tmp_pat
 
     assert exit_code == measure_vol.EXIT_ERROR
     assert "Run decimate.py first" in caplog.text
+
+
+def test_decimated_stage_fails_loudly_when_one_part_is_missing(tmp_path, caplog):
+    # --part both must mean both are actually checked -- silently passing
+    # having only validated crania would defeat the point of the gate.
+    data_root = tmp_path / "data"
+    crania_dir = data_root / "02_decimated" / "crania"
+    crania_dir.mkdir(parents=True)
+    make_tetrahedron_ply(crania_dir / "Testus_syntheticus_crania_dec.ply")
+    # mandible_dir deliberately never created.
+
+    with caplog.at_level(logging.ERROR):
+        exit_code = measure_vol.main(
+            ["--data-root", str(data_root), "--stage", "decimated", "--part", "both", "--jobs", "1"]
+        )
+
+    assert exit_code == measure_vol.EXIT_ERROR
+    assert "Expected decimated output missing for" in caplog.text
+    assert "mandible" in caplog.text
+
+    # Narrowing --part to what actually exists still works.
+    exit_code = measure_vol.main(
+        ["--data-root", str(data_root), "--stage", "decimated", "--part", "crania", "--jobs", "1"]
+    )
+    assert exit_code == 0
+
+
+def test_raw_stage_reports_a_file_named_01_raw_as_a_real_problem(tmp_path, caplog):
+    # 01_raw existing as a non-directory is a misconfiguration, not
+    # "01_raw doesn't exist" -- must not silently fall back to DATA_ROOT
+    # with a misleading "not found" note.
+    data_root = tmp_path / "data"
+    data_root.mkdir(parents=True)
+    (data_root / "01_raw").write_text("oops, this should be a folder", encoding="utf-8")
+    make_tetrahedron_ply(data_root / "Testus_syntheticus crania_wrapped.ply")
+
+    with caplog.at_level(logging.INFO):
+        exit_code = measure_vol.main(["--data-root", str(data_root), "--jobs", "1"])
+
+    assert exit_code == measure_vol.EXIT_ERROR
+    assert "not found -- using" not in caplog.text
+    assert "No raw meshes found" in caplog.text

@@ -125,13 +125,17 @@ class Settings:
 
         Only triggers when 01_raw doesn't exist at all -- if a user has
         already created it (even empty), that's treated as their explicit
-        choice, not something to second-guess.
+        choice, not something to second-guess. If 01_raw exists but isn't a
+        directory (e.g. a stray file with that name), that's a real
+        misconfiguration and is returned as-is rather than silently
+        falling back, so the caller's usual "does not exist" handling
+        surfaces it instead of a misleading fallback note.
 
         Returns (resolved_dir, note); note explains the fallback when one
         is used, else None.
         """
         raw_dir = self.stage_dir("raw")
-        if raw_dir.is_dir():
+        if raw_dir.exists():
             return raw_dir, None
         if self.data_root.is_dir() and any(
             p.suffix.lower() == ".ply" for p in self.data_root.iterdir() if p.is_file()
