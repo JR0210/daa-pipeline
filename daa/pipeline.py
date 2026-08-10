@@ -52,10 +52,14 @@ class StageSpec:
     check: str | None = None
     message: str | None = None
     requires_binary: str | None = None
+    requires_file: str | None = None
 
 
 def load_pipeline(path: Path) -> list[StageSpec]:
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw, dict):
+        raise ValueError(f"{path} must be a YAML mapping with a top-level 'stages' key, got {type(raw).__name__}")
+
     stage_entries = raw.get("stages") or []
     if not stage_entries:
         raise ValueError(f"No stages defined in {path}")
@@ -63,6 +67,9 @@ def load_pipeline(path: Path) -> list[StageSpec]:
     stages: list[StageSpec] = []
     seen: set[str] = set()
     for entry in stage_entries:
+        if not isinstance(entry, dict):
+            raise ValueError(f"Stage entry in {path} must be a mapping, got {type(entry).__name__}: {entry!r}")
+
         name = entry.get("name")
         if not name:
             raise ValueError(f"Stage entry missing 'name' in {path}: {entry}")
@@ -77,8 +84,16 @@ def load_pipeline(path: Path) -> list[StageSpec]:
             raise ValueError(f"Stage {name!r} has gate: approval but no approval_key")
         if gate == "file_presence" and not entry.get("check"):
             raise ValueError(f"Stage {name!r} has gate: file_presence but no check")
-        if gate not in ("approval", "file_presence") and not entry.get("cmd"):
-            raise ValueError(f"Stage {name!r} has no cmd and is not an approval/file_presence gate")
+        if gate not in ("approval", "file_presence"):
+            cmd = entry.get("cmd")
+            if not cmd:
+                raise ValueError(f"Stage {name!r} has no cmd and is not an approval/file_presence gate")
+            if not isinstance(cmd, list) or not all(isinstance(tok, str) for tok in cmd):
+                raise ValueError(f"Stage {name!r} cmd must be a list of strings, got: {cmd!r}")
+
+        foreach = entry.get("foreach")
+        if foreach not in (None, "part"):
+            raise ValueError(f"Stage {name!r} has unsupported foreach value: {foreach!r} (only 'part' is supported)")
 
         stages.append(
             StageSpec(
@@ -90,6 +105,7 @@ def load_pipeline(path: Path) -> list[StageSpec]:
                 check=entry.get("check"),
                 message=entry.get("message"),
                 requires_binary=entry.get("requires_binary"),
+                requires_file=entry.get("requires_file"),
             )
         )
     return stages
@@ -187,6 +203,13 @@ def _run_cmd_stage(stage: StageSpec, settings: Settings, context: dict[str, str]
         if not binary or not _binary_available(binary):
             print(f"[{stage.name}] HALTED - required binary not found: {stage.requires_binary}={binary!r}")
             print(f"  Set {stage.requires_binary.upper()} in .env to a valid executable path.")
+            return HALTED
+
+    if stage.requires_file:
+        value = context.get(stage.requires_file, "")
+        if not value or not Path(value).is_file():
+            print(f"[{stage.name}] HALTED - required file not set or not found: {stage.requires_file}={value!r}")
+            print(f"  Set {stage.requires_file.upper()} in .env to a valid file path.")
             return HALTED
 
     for part in _parts_for(stage):

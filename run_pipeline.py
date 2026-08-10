@@ -20,7 +20,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from daa.cli import setup_logging
+from daa.cli import positive_int, setup_logging
 from daa.config import load_settings
 from daa.pipeline import PipelineState, list_status, load_pipeline, run
 
@@ -30,7 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parent
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the DAA pipeline end-to-end.")
     parser.add_argument("--data-root", default=None, help="Overrides DATA_ROOT env var.")
-    parser.add_argument("--jobs", type=int, default=None, help="Overrides JOBS env var.")
+    parser.add_argument("--jobs", type=positive_int, default=None, help="Overrides JOBS env var.")
     parser.add_argument(
         "--pipeline",
         default=str(REPO_ROOT / "pipeline.yaml"),
@@ -47,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     setup_logging(args.verbose)
 
     settings = load_settings(data_root_override=args.data_root)
-    if args.jobs:
+    if args.jobs is not None:
         settings.jobs = args.jobs
 
     pipeline_path = Path(args.pipeline)

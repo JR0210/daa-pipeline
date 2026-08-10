@@ -11,11 +11,15 @@ so these tests also exercise state persisting correctly across processes.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
+
+from daa.pipeline import load_pipeline
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RUN_PIPELINE = REPO_ROOT / "run_pipeline.py"
@@ -72,7 +76,12 @@ def _write_test_pipeline(tmp_path: Path) -> Path:
     return pipeline_path
 
 
-def _run(tmp_path: Path, pipeline_path: Path, *extra_args: str) -> subprocess.CompletedProcess:
+def _run(
+    tmp_path: Path,
+    pipeline_path: Path,
+    *extra_args: str,
+    extra_env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
     data_root = tmp_path / "data"
     cmd = [
         sys.executable,
@@ -83,7 +92,8 @@ def _run(tmp_path: Path, pipeline_path: Path, *extra_args: str) -> subprocess.Co
         str(pipeline_path),
         *extra_args,
     ]
-    return subprocess.run(cmd, capture_output=True, text=True)
+    env = {**os.environ, **extra_env} if extra_env else None
+    return subprocess.run(cmd, capture_output=True, text=True, env=env)
 
 
 def test_full_run_halts_at_each_gate_and_resumes(tmp_path):
@@ -194,3 +204,70 @@ def test_status_on_fresh_pipeline_shows_nothing_done(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.count("[ ]") == 7
     assert "[x]" not in result.stdout
+
+
+def test_requires_file_halts_until_the_setting_points_at_a_real_file(tmp_path):
+    always_ok, _ = _write_helper_scripts(tmp_path / "scripts")
+    pipeline = {
+        "stages": [
+            {
+                "name": "needs_landmarks",
+                "cmd": [sys.executable, str(always_ok)],
+                "requires_file": "landmarks_csv",
+            },
+        ]
+    }
+    pipeline_path = tmp_path / "pipeline.yaml"
+    pipeline_path.write_text(yaml.safe_dump(pipeline), encoding="utf-8")
+
+    # LANDMARKS_CSV unset (or pointing nowhere) -> clear halt, not a raw
+    # failure from deep inside whatever script actually needed the file.
+    result = _run(tmp_path, pipeline_path, extra_env={"LANDMARKS_CSV": ""})
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "required file not set or not found" in result.stdout
+
+    # Pointing it at a real file clears the preflight and the stage runs.
+    landmarks_csv = tmp_path / "landmarks.csv"
+    landmarks_csv.write_text("id,x.1,y.1,z.1\n", encoding="utf-8")
+
+    result = _run(tmp_path, pipeline_path, extra_env={"LANDMARKS_CSV": str(landmarks_csv)})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Pipeline run complete." in result.stdout
+
+
+def test_load_pipeline_rejects_non_mapping_root(tmp_path):
+    pipeline_path = tmp_path / "pipeline.yaml"
+    pipeline_path.write_text(yaml.safe_dump(["not", "a", "mapping"]), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must be a YAML mapping"):
+        load_pipeline(pipeline_path)
+
+
+def test_load_pipeline_rejects_non_mapping_stage_entry(tmp_path):
+    pipeline_path = tmp_path / "pipeline.yaml"
+    pipeline_path.write_text(yaml.safe_dump({"stages": ["just_a_string"]}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must be a mapping"):
+        load_pipeline(pipeline_path)
+
+
+def test_load_pipeline_rejects_non_list_cmd(tmp_path):
+    pipeline_path = tmp_path / "pipeline.yaml"
+    pipeline_path.write_text(
+        yaml.safe_dump({"stages": [{"name": "bad", "cmd": "python script.py"}]}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="cmd must be a list of strings"):
+        load_pipeline(pipeline_path)
+
+
+def test_load_pipeline_rejects_unsupported_foreach(tmp_path):
+    pipeline_path = tmp_path / "pipeline.yaml"
+    pipeline_path.write_text(
+        yaml.safe_dump({"stages": [{"name": "bad", "cmd": ["true"], "foreach": "parts"}]}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unsupported foreach value"):
+        load_pipeline(pipeline_path)
