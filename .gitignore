@@ -1,0 +1,29 @@
+.venv
+env
+.env
+
+# Pipeline data (specimens are large and personal to each run)
+meshes/
+01_raw/
+02_decimated/
+03_ascii/
+04_aligned/
+05_vtk/
+06_manifests/
+07_qc_images/
+08_daa/
+09_kpca/
+_reports/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# R
+.Rhistory
+.RData
+.Rproj.user/
+
+# Rendered QC images anywhere in the tree
+*.png
