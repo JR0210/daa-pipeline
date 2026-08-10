@@ -92,6 +92,16 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Exit with code 2 (gate) if any mesh is not watertight.",
     )
+    parser.add_argument(
+        "--report-name",
+        default="measure_vol",
+        help=(
+            "Report filename stem under _reports/ (default: measure_vol). "
+            "Set this when invoking measure_vol.py more than once in the same "
+            "pipeline run (e.g. once for raw meshes, once for decimated output) "
+            "so each run's report isn't overwritten by the next."
+        ),
+    )
     args = parser.parse_args(argv)
     setup_logging(args.verbose)
 
@@ -139,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
 
     exit_code = write_stage_report(
         settings.reports_dir(),
-        "measure_vol",
+        args.report_name,
         results,
         errors,
         RESULT_FIELDS,

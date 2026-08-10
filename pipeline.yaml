@@ -1,0 +1,75 @@
+# DAA pipeline stage declarations, run by run_pipeline.py.
+#
+# No personal paths live here -- everything is templated from Settings
+# (see daa/config.py, daa/pipeline.py:build_context). Safe to commit and
+# share; each user's actual paths come from their own .env.
+#
+# Gate types:
+#   exit_code     - a normal stage whose script may exit 2 as a self-clearing
+#                    gate (fix the issue, re-run). No approval needed.
+#   approval      - halts until `python run_pipeline.py --approve <key>`.
+#                    Used only where there's no code-checkable pass condition.
+#   file_presence - halts until the given file(s) exist. Auto-clears once an
+#                    external process (Deformetrica) has produced them.
+#
+# Every Python stage is passed --data-root explicitly -- without it, each
+# script would fall back to its own default (./meshes relative to cwd)
+# instead of the pipeline's actual DATA_ROOT.
+
+stages:
+  - name: measure_vol_raw
+    cmd: ["{python}", "measure_vol.py", "--data-root", "{data_root}",
+          "--input", "{raw_dir}",
+          "--require-watertight", "--report-name", "measure_vol_raw"]
+    gate: exit_code
+
+  - name: decimate
+    cmd: ["{python}", "decimate.py", "--data-root", "{data_root}",
+          "--part", "both", "--jobs", "{jobs}"]
+
+  - name: measure_vol_decimated
+    cmd: ["{python}", "measure_vol.py", "--data-root", "{data_root}",
+          "--part", "both",
+          "--require-watertight", "--report-name", "measure_vol_decimated"]
+    gate: exit_code
+
+  - name: ply_to_ascii
+    cmd: ["{python}", "ply_to_ascii.py", "--data-root", "{data_root}",
+          "--part", "both", "--jobs", "{jobs}"]
+
+  - name: ascii_alignment
+    foreach: part
+    cmd: ["{rscript_path}", "ascii_alignment.r",
+          "--input", "{ascii_dir}/{part}",
+          "--landmarks", "{landmarks_csv}",
+          "--output", "{aligned_dir}/{part}",
+          "--part", "{part}"]
+    requires_binary: rscript_path
+
+  - name: ply_to_vtk
+    cmd: ["{python}", "ply_to_vtk.py", "--data-root", "{data_root}",
+          "--part", "both", "--jobs", "{jobs}"]
+
+  - name: vtk_viewer
+    cmd: ["{python}", "vtk_viewer.py", "--data-root", "{data_root}",
+          "--part", "both", "--jobs", "{jobs}"]
+
+  - name: visual_qc
+    gate: approval
+    approval_key: visual_qc
+    message: "Review the six-view images in {qc_images_dir}, then run: python run_pipeline.py --approve visual_qc"
+
+  - name: xml_generator
+    cmd: ["{python}", "xml_generator.py", "--data-root", "{data_root}", "--part", "both"]
+
+  - name: csv_generator
+    cmd: ["{python}", "csv_generator.py", "--data-root", "{data_root}", "--part", "both"]
+
+  - name: deformetrica
+    foreach: part
+    gate: file_presence
+    check: "{daa_dir}/{part}/DeterministicAtlas__EstimatedParameters__Momenta.txt"
+    message: "Run Deformetrica on {manifests_dir}/{part}/data_set.xml, output to {daa_dir}/{part}/"
+
+  - name: kpca_generator
+    cmd: ["{python}", "kpca_generator.py", "--data-root", "{data_root}", "--part", "both"]
