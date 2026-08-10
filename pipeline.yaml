@@ -26,7 +26,7 @@
 stages:
   - name: measure_vol_raw
     cmd: ["{python}", "measure_vol.py", "--data-root", "{data_root}",
-          "--input", "{raw_dir}",
+          "--stage", "raw",
           "--require-watertight", "--report-name", "measure_vol_raw"]
     gate: exit_code
 
@@ -36,7 +36,7 @@ stages:
 
   - name: measure_vol_decimated
     cmd: ["{python}", "measure_vol.py", "--data-root", "{data_root}",
-          "--part", "both",
+          "--stage", "decimated", "--part", "both",
           "--require-watertight", "--report-name", "measure_vol_decimated"]
     gate: exit_code
 

@@ -1,9 +1,62 @@
 # Setup
 
 ```
+python -m venv .venv
+
+# Windows (PowerShell)
+.venv\Scripts\Activate.ps1
+# Windows (cmd)
+.venv\Scripts\activate.bat
+# macOS/Linux
+source .venv/bin/activate
+
 pip install -r requirements.txt
 cp .env.example .env   # then edit DATA_ROOT, RSCRIPT_PATH, LANDMARKS_CSV, etc.
 ```
+
+If PowerShell blocks `Activate.ps1` with an execution-policy error, run
+`Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` first and try
+again. Activation is a convenience, not a requirement — every script and
+`run_pipeline.py` work fine invoked directly via
+`.venv\Scripts\python.exe script.py` (Windows) / `.venv/bin/python
+script.py` (macOS/Linux) without activating at all. `run_pipeline.py` in
+particular always uses the interpreter that launched it for every Python
+stage, so an unactivated venv is never silently shadowed by a different
+`python` on `PATH`.
+
+`.venv` is already gitignored.
+
+## Adding your meshes
+
+Put your wrapped `.ply` meshes directly in `DATA_ROOT`, or in
+`DATA_ROOT/01_raw` if you'd rather keep them separate from other files —
+the pipeline finds either automatically, no folder needs to be created by
+hand. Everything else (`02_decimated` onward) is generated for you as the
+pipeline runs.
+
+## Setting up R
+
+Only needed for the `ascii_alignment.r` stage.
+
+- Install R from https://cran.r-project.org if you don't already have it.
+- Find `Rscript`'s path:
+  - **Windows**: typically
+    `C:\Program Files\R\R-<version>\bin\Rscript.exe` (or `...\bin\x64\...`
+    on some installs). If R's `bin` folder is already on `PATH`, `where
+    Rscript` will find it.
+  - **macOS**: `which Rscript` — typically `/usr/local/bin/Rscript`
+    (Intel/Homebrew) or `/opt/homebrew/bin/Rscript` (Apple Silicon
+    Homebrew).
+  - **Linux**: `which Rscript` — typically `/usr/bin/Rscript`.
+- Verify it before touching `.env`: `Rscript --version` should print a
+  version, not "command not found".
+- Install the R packages `ascii_alignment.r` needs, once, from an R
+  console: `install.packages(c("Morpho", "geomorph", "abind", "rgl",
+  "Rvcg"))`.
+- Set `RSCRIPT_PATH` in `.env` to `Rscript` if it resolved via `PATH`
+  above, otherwise the full path you found. `run_pipeline.py` checks this
+  before running the R stage and halts with a clear message if it's wrong,
+  rather than failing inside a subprocess.
 
 Every script now takes CLI flags instead of a hardcoded path at the top of
 the file. Run any script with `--help` to see its options. Common flags
@@ -56,9 +109,9 @@ Each stage is also just a normal script, useful when diagnosing one stage
 in isolation:
 
 ```
-python measure_vol.py --input 01_raw --require-watertight
+python measure_vol.py --stage raw --require-watertight
 python decimate.py --part both
-python measure_vol.py --part both --require-watertight --report-name measure_vol_decimated
+python measure_vol.py --stage decimated --part both --require-watertight --report-name measure_vol_decimated
 python ply_to_ascii.py --part both
 Rscript ascii_alignment.r --input <ascii_dir>/crania --landmarks <landmarks_csv> --output <aligned_dir>/crania --part crania
 Rscript ascii_alignment.r --input <ascii_dir>/mandible --landmarks <landmarks_csv> --output <aligned_dir>/mandible --part mandible
@@ -74,7 +127,10 @@ python kpca_generator.py --part both
 layout keeps crania and mandible fully separate from decimation onward.
 `--report-name` keeps the two `measure_vol.py` runs' reports from
 overwriting each other under `_reports/` — `run_pipeline.py` already sets
-this for you.
+this for you. `--stage` tells `measure_vol.py` which folder(s) to check —
+`raw` (the default) and `decimated` look in different places, since
+decimated output is already split into per-part folders and raw meshes
+aren't.
 
 ## New features/changes required
 
@@ -95,6 +151,14 @@ self-clear. See "Order of Operations (automated)" above.
 `ascii_alignment.r`'s real execution and a real Deformetrica run were not
 verified on this machine (no R installed here) — verify those on a machine
 that has R before trusting them on real data.
+
+**Status (onboarding fixes, complete):** the pipeline no longer requires
+`DATA_ROOT/01_raw` to be created by hand — see "Adding your meshes" above.
+Also fixed: `measure_vol.py --stage decimated` (used by the
+`measure_vol_decimated` pipeline stage) was silently ignoring `--part` and
+re-checking the raw folder a second time instead of the actual decimated
+output, meaning the watertightness gate never verified decimation didn't
+break anything. It now scans `02_decimated/<part>` as intended.
 
 ### Decimate script
 Currently will take the meshes in the folder and decimate them to 50 000 faces/triangles and export them into a file. Currently, if the files are below 50,000, it just ignores them but this is unhelpful in that you end up with a folder with only some of the meshes and not all of them, so can we change it so that it exports those files as well? Also, do you think we can edit it so that it differentiates between mandibles and crania because cba splitting them manually. Also, whilst we’re at it, cna we make it so it outputs all the file names in the same format?
@@ -125,3 +189,7 @@ VTK viewer - Shows all six orientations of the skull, to be used after aligning 
 XML generation - Before the meshes go into the DAA, you need to create the xml file that has a list of the meshes going in, and also create the initial template file (copy and paste one of the any of the mesh vtk files). Then the files to go into the DAA are the meshes, the xml file, as well as the other two files (which I can’t remember right now, think they’re both parameter files). 
 
 CSV/kPCA generation - .....
+
+## License
+
+MIT — see [LICENSE](LICENSE).

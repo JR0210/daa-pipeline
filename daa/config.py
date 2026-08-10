@@ -112,6 +112,38 @@ class Settings:
             return self.mandible_tokens
         raise ValueError(f"Unknown part {part!r}; expected one of {PARTS}")
 
+    def resolve_raw_input(self) -> tuple[Path, str | None]:
+        """Resolve the raw-mesh input directory.
+
+        Prefers DATA_ROOT/01_raw; if that doesn't exist but DATA_ROOT
+        itself contains .ply files directly, falls back to DATA_ROOT
+        itself -- so pointing DATA_ROOT straight at an existing mesh
+        folder works with no manual folder creation. Every later stage
+        still gets its own auto-created DATA_ROOT/NN_name folder; 01_raw
+        is the one exception because it's the pipeline's sole external
+        input, not something any script here produces.
+
+        Only triggers when 01_raw doesn't exist at all -- if a user has
+        already created it (even empty), that's treated as their explicit
+        choice, not something to second-guess.
+
+        Returns (resolved_dir, note); note explains the fallback when one
+        is used, else None.
+        """
+        raw_dir = self.stage_dir("raw")
+        if raw_dir.is_dir():
+            return raw_dir, None
+        if self.data_root.is_dir() and any(
+            p.suffix.lower() == ".ply" for p in self.data_root.iterdir() if p.is_file()
+        ):
+            note = (
+                f"{raw_dir} not found -- using {self.data_root} directly, since it "
+                f"contains .ply files. (Optionally move them into {raw_dir} to keep "
+                f"the pipeline's folder layout tidy -- both work.)"
+            )
+            return self.data_root, note
+        return raw_dir, None
+
 
 def load_settings(data_root_override: str | os.PathLike | None = None) -> Settings:
     """Build a Settings object from environment/.env, with an optional override."""

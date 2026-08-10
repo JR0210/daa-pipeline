@@ -79,10 +79,25 @@ def main(argv: list[str] | None = None) -> int:
     setup_logging(args.verbose)
 
     settings = resolve_settings(args)
-    input_dir = Path(args.input) if args.input else settings.stage_dir("raw")
+
+    if args.input:
+        input_dir = Path(args.input)
+    else:
+        input_dir, note = settings.resolve_raw_input()
+        if note:
+            logger.info(note)
 
     if not input_dir.is_dir():
-        logger.error("Input folder does not exist: %s", input_dir)
+        if args.input:
+            logger.error("Input folder does not exist: %s", input_dir)
+        else:
+            logger.error(
+                "No raw meshes found. Either:\n"
+                "  1. Copy your wrapped .ply files directly into %s, or\n"
+                "  2. Create %s and copy them in there instead\n"
+                "  Then re-run. (Or pass --input <folder> to point elsewhere.)",
+                settings.data_root, input_dir,
+            )
         return 1
 
     mesh_files = sorted(p for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() == ".ply")

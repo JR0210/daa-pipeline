@@ -1,10 +1,13 @@
 """Measure volume, PCA length and watertightness for a batch of meshes.
 
 Usage:
-    python measure_vol.py --input <folder> [--require-watertight] [--jobs N]
+    python measure_vol.py --stage raw [--require-watertight] [--jobs N]
+    python measure_vol.py --stage decimated --part both --require-watertight
 
-Run once on raw wrapped meshes, and again on decimated output to confirm
-decimation did not break watertightness (see README "Order of Operations").
+Run once on raw wrapped meshes (--stage raw, the default), and again on
+decimated output (--stage decimated) to confirm decimation did not break
+watertightness (see README "Order of Operations"). These check different
+folders -- --stage picks which.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
-from daa.cli import build_parser, resolve_settings, setup_logging
+from daa.cli import build_parser, parts_to_process, resolve_settings, setup_logging
 from daa.naming import UnclassifiedMeshError, parse_specimen
 from daa.report import EXIT_ERROR, EXIT_GATE, write_stage_report
 
@@ -102,22 +105,68 @@ def main(argv: list[str] | None = None) -> int:
             "so each run's report isn't overwritten by the next."
         ),
     )
+    parser.add_argument(
+        "--stage",
+        choices=("raw", "decimated"),
+        default="raw",
+        help=(
+            "Which stage's output to measure (default: raw). 'raw' scans "
+            "DATA_ROOT/01_raw (or DATA_ROOT itself, see --help for "
+            "resolve_raw_input fallback); 'decimated' scans "
+            "DATA_ROOT/02_decimated/<part> for each part in --part. "
+            "Ignored if --input is given."
+        ),
+    )
     args = parser.parse_args(argv)
     setup_logging(args.verbose)
 
     settings = resolve_settings(args)
-    input_dir = Path(args.input) if args.input else settings.stage_dir("raw")
+
+    if args.input:
+        input_dirs = [Path(args.input)]
+    elif args.stage == "decimated":
+        input_dirs = [settings.stage_dir("decimated", part) for part in parts_to_process(args)]
+    else:
+        raw_dir, note = settings.resolve_raw_input()
+        if note:
+            logger.info(note)
+        input_dirs = [raw_dir]
 
     print("=" * 60)
     print("MESH BATCH PROCESSING")
     print("=" * 60)
-    print(f"\nMesh folder:\n{input_dir}")
+    print(f"\nMesh folder(s):")
+    for d in input_dirs:
+        print(f"  {d}")
 
-    if not input_dir.is_dir():
-        logger.error("Mesh folder does not exist: %s", input_dir)
+    existing_dirs = [d for d in input_dirs if d.is_dir()]
+    missing_dirs = [d for d in input_dirs if d not in existing_dirs]
+
+    if not existing_dirs:
+        if args.input:
+            logger.error("Mesh folder does not exist: %s", input_dirs[0])
+        elif args.stage == "decimated":
+            logger.error(
+                "No decimated meshes found (checked: %s). Run decimate.py first, then re-run this check.",
+                ", ".join(str(d) for d in input_dirs),
+            )
+        else:
+            logger.error(
+                "No raw meshes found. Either:\n"
+                "  1. Copy your wrapped .ply files directly into %s, or\n"
+                "  2. Create %s and copy them in there instead\n"
+                "  Then re-run. (Or pass --input <folder> to point elsewhere.)",
+                settings.data_root, input_dirs[0],
+            )
         return EXIT_ERROR
 
-    mesh_files = sorted(p for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() == ".ply")
+    if missing_dirs:
+        for d in missing_dirs:
+            logger.warning("Mesh folder does not exist, skipping: %s", d)
+
+    mesh_files = sorted(
+        p for d in existing_dirs for p in d.iterdir() if p.is_file() and p.suffix.lower() == ".ply"
+    )
     print(f"\nPLY files found: {len(mesh_files)}")
 
     if args.dry_run:
