@@ -15,6 +15,13 @@ from daa.config import PARTS, Settings, load_settings
 logger = logging.getLogger("daa")
 
 
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1, got: {parsed}")
+    return parsed
+
+
 def build_parser(description: str) -> argparse.ArgumentParser:
     """Create an ArgumentParser pre-populated with the common pipeline flags.
 
@@ -44,7 +51,7 @@ def build_parser(description: str) -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--jobs",
-        type=int,
+        type=positive_int,
         default=None,
         help="Number of parallel worker processes (overrides JOBS env var).",
     )
@@ -78,7 +85,7 @@ def setup_logging(verbose: bool) -> None:
 def resolve_settings(args: argparse.Namespace) -> Settings:
     """Load Settings, applying any CLI overrides (CLI flag > env var > default)."""
     settings = load_settings(data_root_override=args.data_root)
-    if getattr(args, "jobs", None):
+    if getattr(args, "jobs", None) is not None:
         settings.jobs = args.jobs
     return settings
 
